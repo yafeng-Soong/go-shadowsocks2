@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shadowsocks/go-shadowsocks2/socks"
+	"github.com/yafeng-Soong/go-shadowsocks2/mimicry"
+	"github.com/yafeng-Soong/go-shadowsocks2/socks"
 )
 
 // Create a SOCKS server listening on addr and proxy to server.
@@ -78,7 +79,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 				rc = timedCork(rc, 10*time.Millisecond, 1280)
 			}
 			rc = shadow(rc)
-
+			rc = mimicry.NewEncapsulator(rc)
 			if _, err = rc.Write(tgt); err != nil {
 				logf("failed to send target address: %v", err)
 				return
