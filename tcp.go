@@ -79,16 +79,21 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 				rc = timedCork(rc, 10*time.Millisecond, 1280)
 			}
 			rc = shadow(rc)
-			rc = mimicry.NewEncapsulator(rc)
+
 			if _, err = rc.Write(tgt); err != nil {
 				logf("failed to send target address: %v", err)
 				return
 			}
 
 			logf("proxy %s <-> %s <-> %s", c.RemoteAddr(), server, tgt)
-			if err = relay(rc, c); err != nil {
+
+			left := mimicry.NewEncapsulator(rc)
+			left.ProduceBytes()
+			left.SendPacks()
+			if err = relay(left, c); err != nil {
 				logf("relay error: %v", err)
 			}
+			left.CloseQueue()
 		}()
 	}
 }
@@ -136,6 +141,7 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn) {
 			defer rc.Close()
 
 			logf("proxy %s <-> %s", c.RemoteAddr(), tgt)
+			rc = mimicry.NewDecapsulator(rc)
 			if err = relay(sc, rc); err != nil {
 				logf("relay error: %v", err)
 			}
