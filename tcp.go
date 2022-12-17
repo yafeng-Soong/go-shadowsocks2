@@ -87,7 +87,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 
 			logf("proxy %s <-> %s <-> %s", c.RemoteAddr(), server, tgt)
 
-			left := mimicry.NewEncapsulator(rc)
+			left := mimicry.NewEncapsulate1(rc)
 			left.ProduceBytes()
 			left.SendPacks()
 			if err = relay(left, c); err != nil {

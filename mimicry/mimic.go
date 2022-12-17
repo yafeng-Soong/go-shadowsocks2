@@ -1,16 +1,20 @@
 package mimicry
 
 import (
+	"container/list"
 	"encoding/binary"
 	"log"
 	"math/rand"
 	"net"
+	"sync"
 	"time"
 )
 
 const (
 	Filler = iota
 	Encapsulation
+	Partion
+	LastPartion
 	PureData
 )
 
@@ -123,6 +127,122 @@ func NewEncapsulator(c net.Conn) *Encapsulator {
 		queue:            make(chan []byte, 50),
 		FillerLengthChan: make(chan int, 50),
 	} // 最大50个包的缓冲
+}
+
+type Encapsulate1 struct {
+	net.Conn
+	// remain atomic.Int32
+	queue            chan []byte
+	deque            *list.List
+	lock             sync.Mutex
+	fillOver         bool
+	fillerLengthChan chan int
+}
+
+func (e *Encapsulate1) Write(b []byte) (int, error) {
+	length := len(b)
+	tmp := make([]byte, length)
+	copy(tmp, b)
+	if e.fillOver {
+		e.queue <- tmp
+	} else {
+		e.saveToDeque(tmp) // 放到队列尾部
+	}
+	return len(b), nil
+}
+
+func (e *Encapsulate1) Read(b []byte) (int, error) {
+	return e.Conn.Read(b)
+}
+
+func (e *Encapsulate1) ProduceBytes() {
+	go func() {
+		lens := []int{517, 231, 2957, 1460, 1308, 2236, 38, 2045, 4380, 1460, 1460, 1941, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1554}
+		for _, x := range lens {
+			n := rand.Intn(1000000)
+			time.Sleep(time.Duration(n) * time.Microsecond)
+			e.fillerLengthChan <- x
+		}
+		close(e.fillerLengthChan)
+		e.fillOver = true
+	}()
+}
+
+func (e *Encapsulate1) SendPacks() {
+	go func() {
+		for length := range e.fillerLengthChan {
+			out := randBytes(length)
+			bytes := e.loadFromDeque(length - 3)
+			if len(bytes) == 0 {
+				out[0] = Filler
+			} else {
+				out[0] = Encapsulation
+				binary.BigEndian.PutUint16(out[1:3], uint16(len(bytes)))
+				copy(out[3:], bytes)
+			}
+			e.Conn.Write(out)
+		} // 先用一定数量的随机字节填充信道
+		// 清理deque
+		e.lock.Lock()
+		for x := e.deque.Front(); x != nil; {
+			next := x.Next()
+			data := e.deque.Remove(x).([]byte)
+			tmp := make([]byte, 1)
+			tmp[0] = PureData
+			tmp = append(tmp, data...)
+			e.Conn.Write(tmp)
+			x = next
+		}
+		e.lock.Unlock()
+		log.Println("填充完毕")
+		// 随机字节发送完后填充真实数据
+		for data := range e.queue {
+			tmp := make([]byte, 1)
+			tmp[0] = PureData
+			tmp = append(tmp, data...)
+			e.Conn.Write(tmp)
+		}
+	}()
+}
+
+func (e *Encapsulate1) CloseQueue() {
+	close(e.queue)
+}
+
+func (e *Encapsulate1) loadFromDeque(length int) []byte {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	res := make([]byte, 0)
+	remain := length
+	for remain > 0 && e.deque.Len() > 0 {
+		tmp := e.deque.Remove(e.deque.Front()).([]byte)
+		if len(tmp) <= remain {
+			res = append(res, tmp...)
+			remain -= len(tmp)
+		} else {
+			left, right := tmp[:remain], tmp[remain:]
+			res = append(res, left...)
+			e.deque.PushFront(right)
+			remain = 0
+		}
+	}
+	return res
+}
+
+func (e *Encapsulate1) saveToDeque(data []byte) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	e.deque.PushBack(data)
+}
+
+func NewEncapsulate1(c net.Conn) *Encapsulate1 {
+	return &Encapsulate1{
+		Conn:             c,
+		queue:            make(chan []byte, 50),
+		deque:            list.New(),
+		fillOver:         false,
+		fillerLengthChan: make(chan int, 50),
+	}
 }
 
 type Decapsulator struct {
