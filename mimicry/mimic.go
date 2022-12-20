@@ -157,11 +157,21 @@ func (e *Encapsulate1) Read(b []byte) (int, error) {
 
 func (e *Encapsulate1) ProduceBytes() {
 	go func() {
-		lens := []int{517, 231, 2957, 1460, 1308, 2236, 38, 2045, 4380, 1460, 1460, 1941, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1554}
-		for _, x := range lens {
-			n := rand.Intn(1000000)
-			time.Sleep(time.Duration(n) * time.Microsecond)
-			e.fillerLengthChan <- x
+		// lens := []int{517, 231, 2957, 1460, 1308, 2236, 38, 2045, 4380, 1460, 1460, 1941, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1554}
+		// for _, x := range lens {
+		// 	n := rand.Intn(1000000)
+		// 	time.Sleep(time.Duration(n) * time.Microsecond)
+		// 	e.fillerLengthChan <- x
+		// }
+		index := rand.Intn(len(FlowList))
+		flow := FlowList[index]
+		log.Println("使用", flow.Id, flow.Dst, "填充信道")
+		for _, x := range flow.Packs {
+			if x.Next == -1 {
+				break
+			}
+			e.fillerLengthChan <- x.Length
+			time.Sleep(time.Duration(x.Next) * time.Nanosecond)
 		}
 		close(e.fillerLengthChan)
 		e.fillOver = true

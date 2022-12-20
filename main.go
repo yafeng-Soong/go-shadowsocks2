@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/yafeng-Soong/go-shadowsocks2/core"
+	"github.com/yafeng-Soong/go-shadowsocks2/mimicry"
 	"github.com/yafeng-Soong/go-shadowsocks2/socks"
 )
 
@@ -129,6 +130,7 @@ func main() {
 		}
 
 		if flags.Socks != "" {
+			mimicry.FlowList = mimicry.LoadFromFile(mimicry.FlowFile) // 从文件加载flow数据
 			socks.UDPEnabled = flags.UDPSocks
 			go socksLocal(flags.Socks, addr, ciph.StreamConn)
 			if flags.UDPSocks {

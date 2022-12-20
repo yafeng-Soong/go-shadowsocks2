@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
@@ -33,6 +34,7 @@ func tcpTun(addr, server, target string, shadow func(net.Conn) net.Conn) {
 
 // Listen on addr and proxy to server to reach target from getAddr.
 func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(net.Conn) (socks.Addr, error)) {
+	rand.Seed(time.Now().UnixNano())
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		logf("failed to listen on %s: %v", addr, err)

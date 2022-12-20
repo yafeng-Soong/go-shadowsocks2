@@ -111,8 +111,6 @@ func (e *Encapsulate) loadFromDeque(length int) []byte {
 		if e.isPartion {
 			res[0] = LastPartion
 			e.isPartion = false
-		} else {
-			// log.Println(e.id, "封装", len(tmp), "bytes 数据", hex.EncodeToString(tmp))
 		}
 	} else {
 		res = make([]byte, length)
