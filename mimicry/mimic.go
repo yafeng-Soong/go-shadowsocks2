@@ -27,6 +27,7 @@ const letterBytes = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW
 // 	Data []byte
 // }
 
+// 简单实现，上层应用来的数据都往queue里放，实际发送的包长为max(len(真实包), len(填充包))
 type Encapsulator struct {
 	net.Conn
 	// remain atomic.Int32
@@ -99,6 +100,7 @@ func (e *Encapsulator) CloseQueue() {
 // 	return
 // }
 
+// 若填充包装不下真实包，直接发送真实包
 func packageBuf(src []byte, length int) (out []byte) {
 	if len(src)+3 > length {
 		out = make([]byte, 1)
@@ -129,6 +131,7 @@ func NewEncapsulator(c net.Conn) *Encapsulator {
 	} // 最大50个包的缓冲
 }
 
+// 终极版，简化了状态并提高了信道利用率
 type Encapsulate1 struct {
 	net.Conn
 	// remain atomic.Int32
@@ -219,6 +222,7 @@ func (e *Encapsulate1) CloseQueue() {
 	close(e.queue)
 }
 
+// 尽量塞满填充包
 func (e *Encapsulate1) loadFromDeque(length int) []byte {
 	e.lock.Lock()
 	defer e.lock.Unlock()

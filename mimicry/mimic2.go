@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// 简单实现的改进版，填充阶段的真实数据包放到双向链表中，填充完毕后放到queue中；状态比较复杂，遂舍弃
 type Encapsulate struct {
 	id string
 	net.Conn
@@ -93,6 +94,7 @@ func (e *Encapsulate) CloseQueue() {
 	close(e.queue)
 }
 
+// 若填充包装不下真实包，则装一部分，并把剩下部分放回双向链表头
 func (e *Encapsulate) loadFromDeque(length int) []byte {
 	e.lock.Lock()
 	defer e.lock.Unlock()
