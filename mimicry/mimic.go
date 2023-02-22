@@ -2,11 +2,13 @@ package mimicry
 
 import (
 	"container/list"
+	"context"
 	"encoding/binary"
 	"log"
 	"math/rand"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -138,7 +140,7 @@ type Encapsulate1 struct {
 	queue            chan []byte
 	deque            *list.List
 	lock             sync.Mutex
-	fillOver         bool
+	fillOver         atomic.Bool // 并发安全
 	fillerLengthChan chan int
 }
 
@@ -146,7 +148,7 @@ func (e *Encapsulate1) Write(b []byte) (int, error) {
 	length := len(b)
 	tmp := make([]byte, length)
 	copy(tmp, b)
-	if e.fillOver {
+	if e.fillOver.Load() {
 		e.queue <- tmp
 	} else {
 		e.saveToDeque(tmp) // 放到队列尾部
@@ -158,7 +160,7 @@ func (e *Encapsulate1) Read(b []byte) (int, error) {
 	return e.Conn.Read(b)
 }
 
-func (e *Encapsulate1) ProduceBytes() {
+func (e *Encapsulate1) ProduceBytes(ctx context.Context) {
 	go func() {
 		// lens := []int{517, 231, 2957, 1460, 1308, 2236, 38, 2045, 4380, 1460, 1460, 1941, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1554}
 		// for _, x := range lens {
@@ -166,47 +168,62 @@ func (e *Encapsulate1) ProduceBytes() {
 		// 	time.Sleep(time.Duration(n) * time.Microsecond)
 		// 	e.fillerLengthChan <- x
 		// }
+		defer close(e.fillerLengthChan)
 		index := rand.Intn(len(FlowList))
 		flow := FlowList[index]
 		log.Println("使用", flow.Id, flow.Dst, "填充信道")
 		for _, x := range flow.Packs {
 			if x.Next == -1 {
-				break
+				return
 			}
-			e.fillerLengthChan <- x.Length
-			time.Sleep(time.Duration(x.Next) * time.Nanosecond)
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				e.fillerLengthChan <- x.Length
+				time.Sleep(time.Duration(x.Next) * time.Nanosecond)
+			}
 		}
-		close(e.fillerLengthChan)
-		e.fillOver = true
 	}()
 }
 
-func (e *Encapsulate1) SendPacks() {
+func (e *Encapsulate1) SendPacks(ctx context.Context) {
 	go func() {
 		for length := range e.fillerLengthChan {
-			out := randBytes(length)
-			bytes := e.loadFromDeque(length - 3)
-			if len(bytes) == 0 {
-				out[0] = Filler
-			} else {
-				out[0] = Encapsulation
-				binary.BigEndian.PutUint16(out[1:3], uint16(len(bytes)))
-				copy(out[3:], bytes)
+			select {
+			case <-ctx.Done():
+				log.Println("填充打断")
+				return
+			default:
+				out := randBytes(length)
+				bytes := e.loadFromDeque(length - 3)
+				if len(bytes) == 0 {
+					out[0] = Filler
+				} else {
+					out[0] = Encapsulation
+					binary.BigEndian.PutUint16(out[1:3], uint16(len(bytes)))
+					copy(out[3:], bytes)
+				}
+				e.Conn.Write(out)
 			}
-			e.Conn.Write(out)
 		} // 先用一定数量的随机字节填充信道
-		// 清理deque
-		e.lock.Lock()
+		// 清理deque前保证fillOver为true就可以保证清理时没有数据再写入deque
+		e.fillOver.Store(true)
 		for x := e.deque.Front(); x != nil; {
-			next := x.Next()
-			data := e.deque.Remove(x).([]byte)
-			tmp := make([]byte, 1)
-			tmp[0] = PureData
-			tmp = append(tmp, data...)
-			e.Conn.Write(tmp)
-			x = next
+			select {
+			case <-ctx.Done():
+				log.Println("清理打断")
+				return
+			default:
+				next := x.Next()
+				data := e.deque.Remove(x).([]byte)
+				tmp := make([]byte, 1)
+				tmp[0] = PureData
+				tmp = append(tmp, data...)
+				e.Conn.Write(tmp)
+				x = next
+			}
 		}
-		e.lock.Unlock()
 		log.Println("填充完毕")
 		// 随机字节发送完后填充真实数据
 		for data := range e.queue {
@@ -250,13 +267,15 @@ func (e *Encapsulate1) saveToDeque(data []byte) {
 }
 
 func NewEncapsulate1(c net.Conn) *Encapsulate1 {
-	return &Encapsulate1{
-		Conn:             c,
-		queue:            make(chan []byte, 50),
-		deque:            list.New(),
-		fillOver:         false,
+	en := &Encapsulate1{
+		Conn:  c,
+		queue: make(chan []byte, 50),
+		deque: list.New(),
+		// fillOver:         false,
 		fillerLengthChan: make(chan int, 50),
 	}
+	en.fillOver.Store(false)
+	return en
 }
 
 type Decapsulator struct {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"io/ioutil"
@@ -90,12 +91,14 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 			logf("proxy %s <-> %s <-> %s", c.RemoteAddr(), server, tgt)
 
 			left := mimicry.NewEncapsulate1(rc)
-			left.ProduceBytes()
-			left.SendPacks()
+			ctx, cancel := context.WithCancel(context.Background())
+			left.ProduceBytes(ctx)
+			left.SendPacks(ctx)
 			if err = relay(left, c); err != nil {
 				logf("relay error: %v", err)
 			}
 			left.CloseQueue()
+			cancel()
 		}()
 	}
 }
