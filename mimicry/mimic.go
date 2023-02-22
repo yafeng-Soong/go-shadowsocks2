@@ -162,16 +162,9 @@ func (e *Encapsulate1) Read(b []byte) (int, error) {
 
 func (e *Encapsulate1) ProduceBytes(ctx context.Context) {
 	go func() {
-		// lens := []int{517, 231, 2957, 1460, 1308, 2236, 38, 2045, 4380, 1460, 1460, 1941, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1554}
-		// for _, x := range lens {
-		// 	n := rand.Intn(1000000)
-		// 	time.Sleep(time.Duration(n) * time.Microsecond)
-		// 	e.fillerLengthChan <- x
-		// }
 		defer close(e.fillerLengthChan)
-		index := rand.Intn(len(FlowList))
-		flow := FlowList[index]
-		log.Println("使用", flow.Id, flow.Dst, "填充信道")
+		flow := FlowList.GetFlow()
+		log.Println("使用", len(flow.Packs), "个包填充信道")
 		for _, x := range flow.Packs {
 			if x.Next == -1 {
 				return
@@ -180,7 +173,7 @@ func (e *Encapsulate1) ProduceBytes(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			default:
-				e.fillerLengthChan <- x.Length
+				e.fillerLengthChan <- int(x.Length)
 				time.Sleep(time.Duration(x.Next) * time.Nanosecond)
 			}
 		}

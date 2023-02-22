@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+// package test;
+import "google/protobuf/empty.proto";
+option go_package="./;proto";
+
+
+//定义服务接口
+service GrpcService {
+    rpc flows (google.protobuf.Empty) returns (FlowResponse) {}
+}
+
+//返回的对象
+message FlowResponse {
+    repeated Flow flows = 1;
+};
+
+// message Flow {
+//     repeated int32 lens = 1;
+//     repeated int64 gaps = 2;
+// };
+
+message Flow {
+    repeated Pack packs = 1;
+};
+
+message Pack {
+    int32 length = 1;
+    int64 next = 2;
+}
+// golang编译命令 protoc --go_out=. flow.proto
+// protoc --go-grpc_out=. flow.proto

@@ -130,7 +130,7 @@ func main() {
 		}
 
 		if flags.Socks != "" {
-			mimicry.FlowList = mimicry.LoadFromFile(mimicry.FlowFile) // 从文件加载flow数据
+			mimicry.FlowList = mimicry.NewFlowContainer() // 从rpc请求flow数据
 			socks.UDPEnabled = flags.UDPSocks
 			go socksLocal(flags.Socks, addr, ciph.StreamConn)
 			if flags.UDPSocks {

@@ -1,47 +1,85 @@
 package mimicry
 
 import (
-	"bufio"
-	"encoding/json"
-	"io"
-	"os"
+	"container/list"
+	"context"
+	"log"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/golang/protobuf/ptypes/empty"
+	pb "github.com/yafeng-Soong/go-shadowsocks2/mimicry/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
-type Flow struct {
-	Id       string  `json:"id"`
-	Dst      string  `json:"dst"`
-	Duration int64   `json:"duration"`
-	Packs    []*Pack `json:"packs"`
+const (
+	address = "127.0.0.1:50051"
+)
+
+// 持有从rpc请求到的Flow集合
+type FlowContainer struct {
+	flows     *list.List
+	lock      sync.Mutex
+	conn      *grpc.ClientConn
+	isRequest int32
+	client    pb.GrpcServiceClient
 }
 
-type Pack struct {
-	Length int   `json:"length"`
-	Next   int64 `json:"next"`
-}
-
-func LoadFromFile(filename string) []Flow {
-	f, err := os.Open(filename)
-	if err != nil {
-		panic(err)
+// 获取一条flow
+func (fc *FlowContainer) GetFlow() *pb.Flow {
+	fc.lock.Lock()
+	defer fc.lock.Unlock()
+	flow := fc.flows.Remove(fc.flows.Front()).(*pb.Flow)
+	if fc.flows.Len() < 50 {
+		go fc.requestFlow()
 	}
-	defer f.Close()
+	return flow
+}
 
-	r := bufio.NewReader(f)
-	res := make([]Flow, 0)
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil && err != io.EOF {
-			panic(err)
-		}
-		if err == io.EOF {
-			break
-		}
-		var flow Flow
-		if err := json.Unmarshal([]byte(line), &flow); err != nil {
-			panic(err)
+// 补充flows
+func (fc *FlowContainer) requestFlow() {
+	if atomic.CompareAndSwapInt32(&fc.isRequest, 0, 1) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		log.Println("flows不足，开始补充flows")
+		res, err := fc.client.Flows(ctx, &empty.Empty{})
+		if err != nil {
+			log.Println("补充flows出错")
 		} else {
-			res = append(res, flow)
+			fc.lock.Lock()
+			defer fc.lock.Unlock()
+			for _, flow := range res.Flows {
+				fc.flows.PushBack(flow)
+			}
+			log.Println("补充flows完毕，还剩", fc.flows.Len())
 		}
+		atomic.StoreInt32(&fc.isRequest, 0)
 	}
-	return res
+}
+
+// 从rpc请求flows
+func NewFlowContainer() *FlowContainer {
+	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("can't connect to: %s", address)
+	}
+	client := pb.NewGrpcServiceClient(conn)
+	flows := list.New()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := client.Flows(ctx, &empty.Empty{})
+	if err != nil {
+		log.Fatalln("初始化请求rpc出错")
+	}
+	for _, flow := range res.Flows {
+		flows.PushBack(flow)
+	}
+	return &FlowContainer{
+		flows:     flows,
+		isRequest: 0,
+		conn:      conn,
+		client:    client,
+	}
 }
