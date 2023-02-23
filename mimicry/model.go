@@ -41,7 +41,7 @@ func (fc *FlowContainer) GetFlow() *pb.Flow {
 // 补充flows
 func (fc *FlowContainer) requestFlow() {
 	if atomic.CompareAndSwapInt32(&fc.isRequest, 0, 1) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		log.Println("flows不足，开始补充flows")
 		res, err := fc.client.Flows(ctx, &empty.Empty{})
@@ -67,7 +67,7 @@ func NewFlowContainer() *FlowContainer {
 	}
 	client := pb.NewGrpcServiceClient(conn)
 	flows := list.New()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res, err := client.Flows(ctx, &empty.Empty{})
 	if err != nil {
