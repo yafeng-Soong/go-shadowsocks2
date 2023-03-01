@@ -296,11 +296,13 @@ func (d *Decapsulator) Write(b []byte) (int, error) {
 	case Encapsulation:
 		length := binary.BigEndian.Uint16(b[1:3])
 		// log.Println("得到", length, "bytes 解封数据")
-		// tmp := make([]byte, length)
-		// copy(tmp, b[3:length+3])
-		_, err = d.Conn.Write(b[3 : length+3])
+		tmp := make([]byte, length)
+		copy(tmp, b[3:length+3])
+		_, err = d.Conn.Write(tmp)
 	case PureData:
 		// log.Println("得到", n-1, "bytes 原始数据")
+		tmp := make([]byte, n-1)
+		copy(tmp, b[1:])
 		_, err = d.Conn.Write(b[1:])
 	}
 	if err != nil {
