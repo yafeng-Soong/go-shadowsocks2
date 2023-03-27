@@ -32,7 +32,7 @@ func (fc *FlowContainer) GetFlow() *pb.Flow {
 	fc.lock.Lock()
 	defer fc.lock.Unlock()
 	flow := fc.flows.Remove(fc.flows.Front()).(*pb.Flow)
-	if fc.flows.Len() < 50 {
+	if fc.flows.Len() < 25 {
 		go fc.requestFlow()
 	}
 	return flow
@@ -41,7 +41,7 @@ func (fc *FlowContainer) GetFlow() *pb.Flow {
 // 补充flows
 func (fc *FlowContainer) requestFlow() {
 	if atomic.CompareAndSwapInt32(&fc.isRequest, 0, 1) {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 260*time.Second)
 		defer cancel()
 		log.Println("flows不足，开始补充flows")
 		res, err := fc.client.Flows(ctx, &empty.Empty{})
@@ -67,7 +67,8 @@ func NewFlowContainer() *FlowContainer {
 	}
 	client := pb.NewGrpcServiceClient(conn)
 	flows := list.New()
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 260*time.Second)
+	log.Println("请求rpc生成流量中～")
 	defer cancel()
 	res, err := client.Flows(ctx, &empty.Empty{})
 	if err != nil {
