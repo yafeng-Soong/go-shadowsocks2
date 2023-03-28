@@ -3,6 +3,7 @@ module github.com/yafeng-Soong/go-shadowsocks2
 go 1.16
 
 require (
+	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/golang/protobuf v1.5.2
 	github.com/riobard/go-bloom v0.0.0-20200614022211-cdc8013cb5b3
 	golang.org/x/crypto v0.0.0-20211108221036-ceb1ce70b4fa
