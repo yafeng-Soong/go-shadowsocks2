@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/yafeng-Soong/go-shadowsocks2/mimicry"
 	"github.com/yafeng-Soong/go-shadowsocks2/socks"
+	"github.com/yafeng-Soong/go-shadowsocks2/statistic"
 )
 
 // Create a SOCKS server listening on addr and proxy to server.
@@ -41,6 +43,9 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 		logf("failed to listen on %s: %v", addr, err)
 		return
 	}
+
+	ch := make(chan *statistic.TrackerInfo, 100)
+	go statistic.HandleMetric(ch)
 
 	for {
 		c, err := l.Accept()
@@ -90,15 +95,16 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 
 			logf("proxy %s <-> %s <-> %s", c.RemoteAddr(), server, tgt)
 
-			left := mimicry.NewEncapsulate1(rc)
+			left := mimicry.NewEncapsulate1(rc, ch, tgt.String())
 			ctx, cancel := context.WithCancel(context.Background())
 			left.ProduceBytes(ctx)
 			left.SendPacks(ctx)
 			if err = relay(left, c); err != nil {
 				logf("relay error: %v", err)
 			}
-			left.CloseQueue()
+			log.Println("连接转发完毕", left.UUID)
 			cancel()
+			left.CloseQueue(err)
 		}()
 	}
 }

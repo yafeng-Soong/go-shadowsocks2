@@ -28,7 +28,7 @@ func LoadFromFile(filename string) []Flow {
 
 	r := bufio.NewReader(f)
 	res := make([]Flow, 0)
-	for {
+	for i := 0; i < 500; i++ { // 限加载500条信息
 		line, err := r.ReadString('\n')
 		if err != nil && err != io.EOF {
 			panic(err)

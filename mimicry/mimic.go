@@ -10,6 +10,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gofrs/uuid"
+	"github.com/yafeng-Soong/go-shadowsocks2/socks"
+	"github.com/yafeng-Soong/go-shadowsocks2/statistic"
 )
 
 const (
@@ -142,6 +146,8 @@ type Encapsulate1 struct {
 	lock             sync.Mutex
 	fillOver         atomic.Bool // 并发安全
 	fillerLengthChan chan int
+	*statistic.TrackerInfo
+	outChan chan<- *statistic.TrackerInfo
 }
 
 func (e *Encapsulate1) Write(b []byte) (int, error) {
@@ -204,6 +210,13 @@ func (e *Encapsulate1) SendPacks(ctx context.Context) {
 					binary.BigEndian.PutUint16(out[1:3], uint16(len(bytes)))
 					copy(out[3:], bytes)
 				}
+				e.UploadNums++
+				e.UploadReal += len(bytes)
+				e.UploadTotal += length
+				e.UploadPackets = append(
+					e.UploadPackets,
+					&statistic.Packet{Real_bytes: len(bytes), Total_bytes: length},
+				)
 				e.Conn.Write(out)
 			}
 		} // 先用一定数量的随机字节填充信道
@@ -220,6 +233,9 @@ func (e *Encapsulate1) SendPacks(ctx context.Context) {
 				tmp := make([]byte, 1)
 				tmp[0] = PureData
 				tmp = append(tmp, data...)
+				e.UploadPure += len(data)
+				e.UploadPurePlus += len(tmp)
+				e.UploadNums++
 				e.Conn.Write(tmp)
 				x = next
 			}
@@ -230,13 +246,24 @@ func (e *Encapsulate1) SendPacks(ctx context.Context) {
 			tmp := make([]byte, 1)
 			tmp[0] = PureData
 			tmp = append(tmp, data...)
+			e.UploadPure += len(data)
+			e.UploadPurePlus += len(tmp)
+			e.UploadNums++
 			e.Conn.Write(tmp)
 		}
 	}()
 }
 
-func (e *Encapsulate1) CloseQueue() {
+func (e *Encapsulate1) CloseQueue(err error) {
+	log.Println("清理连接", e.UUID)
 	close(e.queue)
+	e.End = time.Now()
+	e.StartTime = e.Start.UnixNano()
+	e.EndTime = e.End.UnixNano()
+	if err != nil {
+		e.Error = true
+	}
+	e.outChan <- e.TrackerInfo
 }
 
 // 尽量塞满填充包
@@ -266,13 +293,30 @@ func (e *Encapsulate1) saveToDeque(data []byte) {
 	e.deque.PushBack(data)
 }
 
-func NewEncapsulate1(c net.Conn) *Encapsulate1 {
+func NewEncapsulate1(c net.Conn, out chan<- *statistic.TrackerInfo, address string) *Encapsulate1 {
+	target := socks.ParseAddr(address)
+	metadata := parseSocksAddr(target)
+	if ip, port, err := parseAddr(c.RemoteAddr().String()); err == nil {
+		metadata.SrcIP = ip
+		metadata.SrcPort = port
+	}
+	uuid, _ := uuid.NewV4()
 	en := &Encapsulate1{
 		Conn:  c,
 		queue: make(chan []byte, 50),
 		deque: list.New(),
 		// fillOver:         false,
 		fillerLengthChan: make(chan int, 50),
+		outChan:          out,
+		TrackerInfo: &statistic.TrackerInfo{
+			UUID:          uuid,
+			Start:         time.Now(),
+			Metadata:      metadata,
+			UploadReal:    0,
+			UploadTotal:   0,
+			UploadNums:    0,
+			UploadPackets: make([]*statistic.Packet, 0, 100),
+		},
 	}
 	en.fillOver.Store(false)
 	return en
